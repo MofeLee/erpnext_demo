@@ -6,10 +6,11 @@ import frappe.utils
 from frappe.utils import random_string, cstr
 from frappe.desk import query_report
 import random
+import time
 
 from frappe.core.page.data_import_tool.data_import_tool import import_doc, export_json
 import logging
-logging.basicConfig(filename='timings.log',level=logging.DEBUG)
+logging.basicConfig(format='%(message)s', filename='timings.log',level=logging.DEBUG)
 
 def timeit(func=None,loops=1,verbose=False):
 	def inner(*args,**kwargs):
@@ -36,8 +37,8 @@ prob = {
 	"default": { "make": 0.6, "qty": (1,5) },
 	"Sales Order": { "make": 1, "qty": (45000 ,50000) },
 	"Sales Invoice": { "make": 1, "qty": (45000 ,50000) },
-	"Purchase Order": { "make": 0.7, "qty": (1,15) },
-	"Purchase Receipt": { "make": 0.7, "qty": (1,15) },
+	"Purchase Order": { "make": 1, "qty": (45000,50000) },
+	"Purchase Receipt": { "make": 1, "qty": (45000,50000) },
 }
 
 def make():
@@ -100,7 +101,6 @@ def _simulate():
 		run_manufacturing(current_date)
 		run_stock(current_date)
 		run_accounts(current_date)
-		run_projects(current_date)
 		run_messages(current_date)
 
 		current_date = frappe.utils.add_days(current_date, 1)
@@ -113,15 +113,18 @@ def run_sales(current_date):
 			make_quotation(current_date)
 
 	if can_make("Sales Order"):
-		for i in xrange(how_many("Sales Order")):
+		no_of_so = how_many("Sales Order")
+		print no_of_so
+		for i in xrange(no_of_so):
 			make_sales_order(current_date)
 
 @timeit
 def run_accounts(current_date):
 	if can_make("Sales Invoice"):
 		report = "Ordered Items to be Billed"
+		print query_report.run(report)["result"]
 		for so in list(set([r[0] for r in query_report.run(report)["result"] if r[0]!="Total"]))[:how_many("Sales Invoice")]:
-			_make_sales_invoice(so)
+			_make_sales_invoice(so, current_date)
 
 	if can_make("Purchase Invoice"):
 		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice
@@ -162,7 +165,7 @@ def run_accounts(current_date):
 			frappe.db.commit()
 
 @timeit
-def _make_sales_invoice(so):
+def _make_sales_invoice(so, current_date):
 	from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
 	si = frappe.get_doc(make_sales_invoice(so))
 	si.posting_date = current_date
@@ -380,7 +383,7 @@ def make_quotation(current_date):
 	frappe.db.commit()
 
 def make_sales_order(current_date):
-	q = get_random("Quotation", {"status": "Submitted"})
+	q = get_random("Quotation", {"docstatus": '1'})
 	if q:
 		from erpnext.selling.doctype.quotation.quotation import make_sales_order
 		so = frappe.get_doc(make_sales_order(q))
