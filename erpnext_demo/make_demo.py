@@ -8,6 +8,19 @@ from frappe.desk import query_report
 import random
 
 from frappe.core.page.data_import_tool.data_import_tool import import_doc, export_json
+import logging
+logging.basicConfig(filename='timings.log',level=logging.DEBUG)
+
+def timeit(func=None,loops=1,verbose=False):
+	def inner(*args,**kwargs):
+		t0 = time.time()
+		result = func(*args,**kwargs)
+		dt = time.time() - t0
+		logging.debug('%s, %2.9f' % (func.__name__, dt))
+		return result
+
+	return inner
+
 # fix price list
 # fix fiscal year
 
@@ -21,7 +34,8 @@ runs_for = None
 bank_name = "Citibank"
 prob = {
 	"default": { "make": 0.6, "qty": (1,5) },
-	"Sales Order": { "make": 0.4, "qty": (1,3) },
+	"Sales Order": { "make": 1, "qty": (45000 ,50000) },
+	"Sales Invoice": { "make": 1, "qty": (45000 ,50000) },
 	"Purchase Order": { "make": 0.7, "qty": (1,15) },
 	"Purchase Receipt": { "make": 0.7, "qty": (1,15) },
 }
@@ -102,20 +116,12 @@ def run_sales(current_date):
 		for i in xrange(how_many("Sales Order")):
 			make_sales_order(current_date)
 
+@timeit
 def run_accounts(current_date):
 	if can_make("Sales Invoice"):
-		from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
 		report = "Ordered Items to be Billed"
 		for so in list(set([r[0] for r in query_report.run(report)["result"] if r[0]!="Total"]))[:how_many("Sales Invoice")]:
-			si = frappe.get_doc(make_sales_invoice(so))
-			si.posting_date = current_date
-			si.fiscal_year = cstr(current_date.year)
-			for d in si.get("items"):
-				if not d.income_account:
-					d.income_account = "Sales - {}".format(company_abbr)
-			si.insert()
-			si.submit()
-			frappe.db.commit()
+			_make_sales_invoice(so)
 
 	if can_make("Purchase Invoice"):
 		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice
@@ -154,6 +160,20 @@ def run_accounts(current_date):
 			jv.insert()
 			jv.submit()
 			frappe.db.commit()
+
+@timeit
+def _make_sales_invoice(so):
+	from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+	si = frappe.get_doc(make_sales_invoice(so))
+	si.posting_date = current_date
+	si.fiscal_year = cstr(current_date.year)
+	for d in si.get("items"):
+		if not d.income_account:
+			d.income_account = "Sales - {}".format(company_abbr)
+	si.insert()
+	si.submit()
+	frappe.db.commit()
+
 
 def run_stock(current_date):
 	# make purchase requests
